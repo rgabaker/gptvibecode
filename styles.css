@@ -16,7 +16,7 @@ header {
 }
 
 header h1 {
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.2rem;
   font-size: 1.4rem;
 }
 
@@ -25,12 +25,16 @@ header p {
   font-size: 0.92rem;
 }
 
-main {
+.layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 260px 1fr;
   gap: 1rem;
   padding: 1rem;
-  box-sizing: border-box;
+}
+
+.nav-panel {
+  height: calc(100vh - 150px);
+  min-height: 500px;
 }
 
 .panel {
@@ -38,12 +42,57 @@ main {
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
   padding: 0.8rem;
-  height: calc(100vh - 150px);
-  min-height: 500px;
+}
+
+.nav-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem;
+  margin-bottom: 0.4rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.nav-item.active {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.controls {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+}
+
+.controls h3 {
+  margin: 0.6rem 0 0.2rem;
+}
+
+.controls label {
+  display: block;
+}
+
+#scenario-select {
+  padding: 0.4rem;
+}
+
+.note {
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
 }
 
 .map-panel,
 .chart-panel {
+  height: calc(100vh - 150px);
+  min-height: 500px;
   display: flex;
   flex-direction: column;
 }
@@ -51,56 +100,39 @@ main {
 #map {
   width: 100%;
   height: 100%;
-  min-height: 0;
   border-radius: 8px;
 }
 
-.legend {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.9rem;
-  margin-bottom: 0.8rem;
-}
-
-.swatch {
-  width: 12px;
-  height: 12px;
-  display: inline-block;
-  border-radius: 50%;
-  margin-right: 0.3rem;
-}
-
-.swatch.oil {
-  background: #dc2626;
-}
-
-.swatch.gas {
-  background: #16a34a;
-}
-
-#chart-title {
-  margin: 0 0 0.6rem;
-  font-size: 1rem;
-}
-
-#production-chart {
+#demand-chart {
   width: 100%;
   flex: 1;
   min-height: 0;
 }
 
+#chart-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
 #chart-subtitle {
-  margin-top: 0.7rem;
+  margin-top: 0.6rem;
   font-size: 0.86rem;
   color: #475569;
 }
 
-@media (max-width: 1100px) {
-  main {
+@media (max-width: 1300px) {
+  .layout {
     grid-template-columns: 1fr;
   }
 
-  .panel {
-    height: 60vh;
+  .nav-panel,
+  .map-panel,
+  .chart-panel {
+    height: auto;
+    min-height: 420px;
+  }
+
+  main {
+    grid-template-columns: 1fr;
   }
 }

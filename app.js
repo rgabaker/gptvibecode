@@ -1,243 +1,285 @@
-const WELL_COUNT = 1000;
-const MONTH_COUNT = 24;
+const scenarioFiles = {
+  Archipelagos: "Demand_Archipelagos.xlsx",
+  Surge: "Demand_Surge.xlsx",
+  Horizon: "Demand_Horizon.xlsx",
+};
 
-const stateClusters = [
-  { code: "TX", weight: 0.48, lat: [26.5, 35.2], lon: [-106.4, -93.5] },
-  { code: "LA", weight: 0.16, lat: [29.0, 33.1], lon: [-94.2, -88.8] },
-  { code: "OK", weight: 0.14, lat: [33.7, 37.0], lon: [-103.0, -94.3] },
-  { code: "NM", weight: 0.05, lat: [31.2, 36.9], lon: [-108.0, -103.0] },
-  { code: "ND", weight: 0.05, lat: [46.0, 49.0], lon: [-104.1, -96.5] },
-  { code: "PA", weight: 0.04, lat: [39.7, 42.4], lon: [-80.5, -74.6] },
-  { code: "CO", weight: 0.04, lat: [37.0, 40.9], lon: [-109.0, -102.0] },
-  { code: "WY", weight: 0.04, lat: [41.0, 44.9], lon: [-111.0, -104.0] },
-];
+const scenarioColors = {
+  Archipelagos: "#2563eb",
+  Surge: "#ea580c",
+  Horizon: "#7c3aed",
+};
+
+const knownHubCoordinates = {
+  "Henry Hub": [29.948, -93.789],
+  "Waha Hub": [31.650, -103.250],
+  "Katy Hub": [29.786, -95.823],
+  "Agua Dulce": [27.783, -97.908],
+  "Carthage Hub": [32.157, -94.337],
+  "SoCal Citygate": [34.052, -118.244],
+  "PG&E Citygate": [37.775, -122.419],
+  "Chicago Citygate": [41.878, -87.630],
+  "Dominion South": [40.300, -80.000],
+  "Transco Zone 6": [40.713, -74.006],
+};
 
 const chartTitle = document.getElementById("chart-title");
 const chartSubtitle = document.getElementById("chart-subtitle");
+const dataStatus = document.getElementById("data-status");
+const scenarioSelect = document.getElementById("scenario-select");
 
-const map = L.map("map", {
-  zoomControl: true,
-}).setView([37.5, -96], 4);
-
+const map = L.map("map", { zoomControl: true }).setView([37.5, -96], 4);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }).addTo(map);
 
-function randomInRange(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-function weightedChoice(items) {
-  const roll = Math.random();
-  let running = 0;
-  for (const item of items) {
-    running += item.weight;
-    if (roll <= running) {
-      return item;
-    }
-  }
-  return items[items.length - 1];
-}
-
-function syntheticProduction(wellType) {
-  const start = wellType === "Oil" ? randomInRange(500, 1800) : randomInRange(900, 2600);
-  const decline = randomInRange(0.018, 0.042);
-  const seasonality = randomInRange(0.03, 0.09);
-
-  return Array.from({ length: MONTH_COUNT }, (_, idx) => {
-    const base = start * Math.exp(-decline * idx);
-    const cyclical = 1 + seasonality * Math.sin((idx / 12) * Math.PI * 2);
-    return Math.max(0, Math.round(base * cyclical));
-  });
-}
-
-function buildWells() {
-  return Array.from({ length: WELL_COUNT }, (_, idx) => {
-    const cluster = weightedChoice(stateClusters);
-    const wellType = Math.random() < 0.56 ? "Oil" : "Gas";
-
-    return {
-      id: `WELL-${String(idx + 1).padStart(4, "0")}`,
-      state: cluster.code,
-      type: wellType,
-      lat: randomInRange(cluster.lat[0], cluster.lat[1]),
-      lon: randomInRange(cluster.lon[0], cluster.lon[1]),
-      production: syntheticProduction(wellType),
-    };
-  });
-}
-
-const wells = buildWells();
-
-const monthLabels = Array.from({ length: MONTH_COUNT }, (_, idx) => {
-  const date = new Date(2023, idx, 1);
-  return date.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-});
-
-const productionChart = new Chart(document.getElementById("production-chart"), {
+const demandChart = new Chart(document.getElementById("demand-chart"), {
   type: "line",
-  data: {
-    labels: monthLabels,
-    datasets: [],
-  },
+  data: { labels: [], datasets: [] },
   options: {
     maintainAspectRatio: false,
-    interaction: {
-      mode: "index",
-      intersect: false,
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        stacked: false,
-      },
-    },
-    plugins: {
-      legend: {
-        display: false,
-      },
-    },
+    interaction: { mode: "index", intersect: false },
+    scales: { y: { beginAtZero: true, stacked: false } },
   },
 });
 
-function updateChart({ title, subtitle, datasets, stacked = false, showLegend = false }) {
+const state = {
+  dates: [],
+  scenarios: {},
+  hubs: [],
+  selectedHubs: [],
+  viewMode: "hub-all-scenarios",
+};
+
+function hashCoordinate(name, min, max) {
+  const h = [...name].reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return min + ((h % 1000) / 1000) * (max - min);
+}
+
+function normalizeScenarioName(raw) {
+  return raw === "Horzion" ? "Horizon" : raw;
+}
+
+function updateChart(title, subtitle, labels, datasets, stacked = false) {
   chartTitle.textContent = title;
   chartSubtitle.textContent = subtitle;
-  productionChart.options.scales.y.stacked = stacked;
-  productionChart.options.plugins.legend.display = showLegend;
-  productionChart.data.datasets = datasets;
-  productionChart.update();
+  demandChart.data.labels = labels;
+  demandChart.data.datasets = datasets;
+  demandChart.options.scales.y.stacked = stacked;
+  demandChart.update();
 }
 
-function markerColor(type) {
-  return type === "Oil" ? "#dc2626" : "#16a34a";
+function getViewMode() {
+  return document.querySelector('input[name="view-mode"]:checked').value;
 }
 
-function wellDataset(well, alpha = 0.35) {
-  const color = markerColor(well.type);
-  const rgba =
-    well.type === "Oil"
-      ? `rgba(220, 38, 38, ${alpha})`
-      : `rgba(22, 163, 74, ${alpha})`;
-
+function seriesForHubScenario(hub, scenario) {
+  const values = state.scenarios[scenario]?.[hub] || [];
   return {
-    label: `${well.id} (${well.type})`,
-    data: well.production,
-    borderColor: color,
-    backgroundColor: rgba,
+    label: `${hub} (${scenario})`,
+    data: values,
+    borderColor: scenarioColors[scenario],
+    backgroundColor: `${scenarioColors[scenario]}55`,
     fill: true,
-    tension: 0.2,
     pointRadius: 0,
-    stack: "selected-wells",
-    borderWidth: 1,
+    tension: 0.2,
   };
 }
 
-const wellLayer = L.layerGroup().addTo(map);
+function showHubAllScenarios(hub) {
+  const datasets = Object.keys(scenarioFiles).map((scenario) => seriesForHubScenario(hub, scenario));
+  updateChart(
+    `Demand for ${hub}`,
+    "All scenarios for selected hub.",
+    state.dates,
+    datasets,
+    false,
+  );
+}
 
-wells.forEach((well) => {
-  const marker = L.circleMarker([well.lat, well.lon], {
-    radius: 5,
-    color: markerColor(well.type),
-    fillColor: markerColor(well.type),
-    fillOpacity: 0.85,
-    weight: 1,
-  }).addTo(wellLayer);
+function showPolygonSpecificScenario(hubs, scenario) {
+  const datasets = hubs.map((hub) => ({
+    label: hub,
+    data: state.scenarios[scenario]?.[hub] || [],
+    borderColor: "#16a34a",
+    backgroundColor: "rgba(22,163,74,0.35)",
+    fill: true,
+    stack: "hubs",
+    pointRadius: 0,
+    tension: 0.2,
+  }));
 
-  marker.bindTooltip(`${well.id} (${well.type}) • ${well.state}`);
+  updateChart(
+    `${scenario}: ${hubs.length} selected hub(s)`,
+    "Stacked area by selected hubs for chosen scenario.",
+    state.dates,
+    datasets,
+    true,
+  );
+}
 
-  marker.on("click", () => {
-    updateChart({
-      title: `${well.id} (${well.type}) Production`,
-      subtitle: `State: ${well.state}. Monthly synthetic production for last ${MONTH_COUNT} months.`,
-      datasets: [
-        {
-          ...wellDataset(well, 0.25),
-          label: "Production",
-          stack: undefined,
-        },
-      ],
-      stacked: false,
-      showLegend: false,
-    });
-  });
-});
-
-const drawnItems = new L.FeatureGroup();
-map.addLayer(drawnItems);
-
-map.addControl(
-  new L.Control.Draw({
-    draw: {
-      polygon: {
-        allowIntersection: false,
-      },
-      polyline: false,
-      rectangle: false,
-      circle: false,
-      marker: false,
-      circlemarker: false,
-    },
-    edit: {
-      featureGroup: drawnItems,
-      remove: true,
-      edit: false,
-    },
-  }),
-);
-
-function summarizePolygon(layer) {
-  const polygon = layer.toGeoJSON();
-  const selected = wells.filter((well) => {
-    const point = turf.point([well.lon, well.lat]);
-    return turf.booleanPointInPolygon(point, polygon);
-  });
-
-  const oilCount = selected.filter((well) => well.type === "Oil").length;
-  const gasCount = selected.length - oilCount;
-
-  if (selected.length === 0) {
-    updateChart({
-      title: "Selected Area Production (0 wells)",
-      subtitle: "No wells inside polygon. Draw another selection.",
-      datasets: [],
-      stacked: false,
-      showLegend: false,
-    });
-    return;
+async function loadWorkbook(fileName, scenario) {
+  const response = await fetch(fileName);
+  if (!response.ok) {
+    throw new Error(`${fileName} not found`);
   }
 
-  const datasets = selected.map((well) => wellDataset(well));
+  const buffer = await response.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
 
-  updateChart({
-    title: `Selected Area Production (${selected.length} wells)`,
-    subtitle: `${oilCount} oil wells + ${gasCount} gas wells inside polygon (stacked area by well).`,
-    datasets,
-    stacked: true,
-    showLegend: false,
+  const hubs = rows[0].slice(1).map((h) => String(h).trim());
+  const dates = rows.slice(1).map((r) => String(r[0] ?? ""));
+
+  if (state.dates.length === 0) {
+    state.dates = dates;
+    state.hubs = hubs;
+  }
+
+  state.scenarios[scenario] = {};
+  hubs.forEach((hub, idx) => {
+    state.scenarios[scenario][hub] = rows.slice(1).map((r) => Number(r[idx + 1] ?? 0));
   });
 }
 
-map.on(L.Draw.Event.CREATED, (event) => {
-  drawnItems.clearLayers();
-  drawnItems.addLayer(event.layer);
-  summarizePolygon(event.layer);
-});
+function fallbackData() {
+  const hubs = ["Henry Hub", "Waha Hub", "Katy Hub", "Agua Dulce", "Carthage Hub"];
+  state.hubs = hubs;
+  state.dates = Array.from({ length: 24 }, (_, i) => new Date(2024, i, 1).toISOString().slice(0, 10));
+  Object.keys(scenarioFiles).forEach((scenario, si) => {
+    state.scenarios[scenario] = {};
+    hubs.forEach((hub, hi) => {
+      state.scenarios[scenario][hub] = state.dates.map((_, i) =>
+        Math.round(120 + hi * 25 + si * 40 + 20 * Math.sin((i / 12) * Math.PI * 2)),
+      );
+    });
+  });
+}
 
-map.on(L.Draw.Event.DELETED, () => {
-  updateChart({
-    title: "Click a well marker to view production history",
-    subtitle: "Or draw a polygon on the map to see stacked area production by selected wells.",
-    datasets: [],
-    stacked: false,
-    showLegend: false,
+function buildHubMarkers() {
+  const layer = L.layerGroup().addTo(map);
+
+  state.hubs.forEach((hub) => {
+    const coord = knownHubCoordinates[hub] || [hashCoordinate(hub, 26, 48), hashCoordinate(hub, -123, -72)];
+    const marker = L.circleMarker(coord, {
+      radius: 6,
+      color: "#1d4ed8",
+      fillColor: "#60a5fa",
+      fillOpacity: 0.9,
+      weight: 1,
+    }).addTo(layer);
+
+    marker.hubName = hub;
+    marker.bindTooltip(hub);
+
+    marker.on("click", () => {
+      if (getViewMode() === "hub-all-scenarios") {
+        showHubAllScenarios(hub);
+      } else {
+        showPolygonSpecificScenario([hub], normalizeScenarioName(scenarioSelect.value));
+      }
+    });
+  });
+
+  return layer;
+}
+
+function setupPolygonSelection() {
+  const drawnItems = new L.FeatureGroup();
+  map.addLayer(drawnItems);
+
+  map.addControl(
+    new L.Control.Draw({
+      draw: {
+        polygon: { allowIntersection: false },
+        polyline: false,
+        rectangle: false,
+        circle: false,
+        marker: false,
+        circlemarker: false,
+      },
+      edit: { featureGroup: drawnItems, remove: true, edit: false },
+    }),
+  );
+
+  map.on(L.Draw.Event.CREATED, (event) => {
+    drawnItems.clearLayers();
+    drawnItems.addLayer(event.layer);
+
+    const polygon = event.layer.toGeoJSON();
+    const selected = [];
+
+    map.eachLayer((layer) => {
+      if (layer.hubName) {
+        const ll = layer.getLatLng();
+        const point = turf.point([ll.lng, ll.lat]);
+        if (turf.booleanPointInPolygon(point, polygon)) {
+          selected.push(layer.hubName);
+        }
+      }
+    });
+
+    state.selectedHubs = selected;
+    const scenario = normalizeScenarioName(scenarioSelect.value);
+    showPolygonSpecificScenario(selected, scenario);
+  });
+
+  map.on(L.Draw.Event.DELETED, () => {
+    state.selectedHubs = [];
+    updateChart(
+      "Click a hub to view all scenarios",
+      "Or draw a polygon to view stacked selected hubs for one scenario.",
+      state.dates,
+      [],
+      false,
+    );
+  });
+}
+
+async function init() {
+  const loadErrors = [];
+
+  for (const [scenarioRaw, fileName] of Object.entries(scenarioFiles)) {
+    const scenario = normalizeScenarioName(scenarioRaw);
+    try {
+      await loadWorkbook(fileName, scenario);
+    } catch (err) {
+      loadErrors.push(String(err.message));
+    }
+  }
+
+  if (Object.keys(state.scenarios).length === 0) {
+    fallbackData();
+    dataStatus.textContent = "Demand files not found in this folder. Showing fallback demo data.";
+  } else {
+    dataStatus.textContent = loadErrors.length
+      ? `Loaded available demand files. Missing: ${loadErrors.join("; ")}`
+      : "Loaded demand files successfully.";
+  }
+
+  buildHubMarkers();
+  setupPolygonSelection();
+
+  updateChart(
+    "Click a hub to view all scenarios",
+    "Or draw a polygon to view stacked selected hubs for one scenario.",
+    state.dates,
+    [],
+    false,
+  );
+}
+
+document.querySelectorAll('input[name="view-mode"]').forEach((input) => {
+  input.addEventListener("change", () => {
+    state.viewMode = getViewMode();
   });
 });
 
-updateChart({
-  title: "Click a well marker to view production history",
-  subtitle: "Or draw a polygon on the map to see stacked area production by selected wells.",
-  datasets: [],
-  stacked: false,
-  showLegend: false,
+scenarioSelect.addEventListener("change", () => {
+  if (state.selectedHubs.length) {
+    showPolygonSpecificScenario(state.selectedHubs, normalizeScenarioName(scenarioSelect.value));
+  }
 });
+
+init();
