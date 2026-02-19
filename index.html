@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>US Oil & Gas Well Dashboard</title>
+    <title>US Hub Demand Dashboard</title>
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -18,27 +18,57 @@
   </head>
   <body>
     <header>
-      <h1>US Oil & Gas Well Production Dashboard</h1>
-      <p>
-        Synthetic dataset with 1,000 wells. Draw a polygon to aggregate production
-        across selected wells.
-      </p>
+      <h1>US Hub Demand Dashboard</h1>
+      <p>Hub demand by date and scenario (Archipelagos, Surge, Horizon).</p>
     </header>
 
-    <main>
-      <section class="panel map-panel">
-        <div id="map"></div>
-      </section>
-      <section class="panel chart-panel">
-        <div class="legend">
-          <span><span class="swatch oil"></span>Oil Wells</span>
-          <span><span class="swatch gas"></span>Gas Wells</span>
+    <div class="layout">
+      <aside class="nav-panel panel">
+        <h2>Navigation</h2>
+        <button class="nav-item active">Hub Demand by Scenario</button>
+        <button class="nav-item" disabled>Page 2 (coming soon)</button>
+        <button class="nav-item" disabled>Page 3 (coming soon)</button>
+
+        <div class="controls">
+          <h3>Chart Options</h3>
+          <label>
+            <input type="radio" name="view-mode" value="hub-all-scenarios" checked />
+            View all scenarios for clicked hub
+          </label>
+          <label>
+            <input type="radio" name="view-mode" value="polygon-specific-scenario" />
+            View polygon-selected hubs for one scenario
+          </label>
+
+          <label for="scenario-select">Scenario</label>
+          <select id="scenario-select">
+            <option value="Archipelagos">Archipelagos</option>
+            <option value="Surge">Surge</option>
+            <option value="Horizon">Horizon</option>
+          </select>
+
+          <h3>Date Range</h3>
+          <label for="start-date">Start date</label>
+          <input id="start-date" type="date" value="2000-01-01" min="2000-01-01" max="2050-12-31" />
+
+          <label for="end-date">End date</label>
+          <input id="end-date" type="date" value="2050-12-31" min="2000-01-01" max="2050-12-31" />
+
+          <p class="note" id="data-status"></p>
         </div>
-        <h2 id="chart-title">Click a well marker to view production history</h2>
-        <canvas id="production-chart"></canvas>
-        <p id="chart-subtitle"></p>
-      </section>
-    </main>
+      </aside>
+
+      <main>
+        <section class="panel map-panel">
+          <div id="map"></div>
+        </section>
+        <section class="panel chart-panel">
+          <h2 id="chart-title">Click a hub to view all scenarios</h2>
+          <canvas id="demand-chart"></canvas>
+          <p id="chart-subtitle"></p>
+        </section>
+      </main>
+    </div>
 
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -48,6 +78,7 @@
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
