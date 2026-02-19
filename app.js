@@ -1,20 +1,10 @@
 const scenarioFileCandidates = {
   Archipelagos: ["demand_Archipelagos.csv", "Demand_Archipelagos.csv", "Demand_Archipelagos.xlsx"],
   Surge: ["demand_Surge.csv", "Demand_Surge.csv", "Demand_Surge.xlsx"],
-  Horizon: [
-    "demand_Horizon.csv",
-    "Demand_Horizon.csv",
-    "Demand_Horizon.xlsx",
-    "Demand_Horzion.csv",
-    "Demand_Horzion.xlsx",
-  ],
+  Horizon: ["demand_Horizon.csv", "Demand_Horizon.csv", "Demand_Horizon.xlsx", "Demand_Horzion.csv", "Demand_Horzion.xlsx"],
 };
 
-const scenarioColors = {
-  Archipelagos: "#2563eb",
-  Surge: "#ea580c",
-  Horizon: "#7c3aed",
-};
+const transportFileCandidates = ["transport_rev.csv", "Transport_rev.csv", "transport.csv"];
 
 const hubCoordinates = {
   Algonquin: [42.3601, -71.0589],
@@ -32,19 +22,31 @@ const hubCoordinates = {
   Mexico: [25.6866, -100.3161],
 };
 
+const scenarioColors = {
+  Archipelagos: "#2563eb",
+  Surge: "#ea580c",
+  Horizon: "#7c3aed",
+};
+
 const chartTitle = document.getElementById("chart-title");
 const chartSubtitle = document.getElementById("chart-subtitle");
 const dataStatus = document.getElementById("data-status");
 const scenarioSelect = document.getElementById("scenario-select");
-const startDateInput = document.getElementById("start-date");
-const endDateInput = document.getElementById("end-date");
+const startYearSelect = document.getElementById("start-year");
+const endYearSelect = document.getElementById("end-year");
 const filePicker = document.getElementById("file-picker");
 const reloadFilesBtn = document.getElementById("reload-files");
 
-const map = L.map("map", { zoomControl: true }).setView([37.5, -96], 4);
+const demandMap = L.map("map-demand", { zoomControl: true }).setView([37.5, -96], 4);
+const transportMap = L.map("map-transport", { zoomControl: true }).setView([37.5, -96], 4);
+
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
+}).addTo(demandMap);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}).addTo(transportMap);
 
 const demandChart = new Chart(document.getElementById("demand-chart"), {
   type: "line",
@@ -66,8 +68,23 @@ const state = {
   lastView: { type: "none", hub: null },
 };
 
-let markerLayer = null;
+let demandMarkerLayer = null;
+let transportLayerGroup = null;
+let transportLoaded = false;
 let selectedFilesByScenario = { Archipelagos: [], Surge: [], Horizon: [] };
+let selectedTransportFile = null;
+
+function normalizeScenarioName(raw) {
+  return raw === "Horzion" ? "Horizon" : raw;
+}
+
+function inferScenarioFromName(name) {
+  const n = name.toLowerCase();
+  if (n.includes("arch")) return "Archipelagos";
+  if (n.includes("surge")) return "Surge";
+  if (n.includes("horizon") || n.includes("horzion")) return "Horizon";
+  return null;
+}
 
 function parseDateCell(value) {
   if (typeof value === "number") {
@@ -75,13 +92,10 @@ function parseDateCell(value) {
     if (!parsed) return null;
     return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d));
   }
-
   const str = String(value ?? "").trim();
   if (!str) return null;
-
   const date = new Date(str);
   if (!Number.isNaN(date.getTime())) return date;
-
   const mdY = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (mdY) return new Date(Number(mdY[3]), Number(mdY[1]) - 1, Number(mdY[2]));
   return null;
@@ -97,35 +111,32 @@ function formatIsoDate(dateObj) {
   return dateObj.toISOString().slice(0, 10);
 }
 
-function normalizeScenarioName(raw) {
-  return raw === "Horzion" ? "Horizon" : raw;
-}
-
-function inferScenarioFromName(name) {
-  const n = name.toLowerCase();
-  if (n.includes("arch")) return "Archipelagos";
-  if (n.includes("surge")) return "Surge";
-  if (n.includes("horizon") || n.includes("horzion")) return "Horizon";
-  return null;
-}
-
 function getViewMode() {
   return document.querySelector('input[name="view-mode"]:checked').value;
 }
 
-function normalizeDateInputs() {
-  if (!startDateInput.value) startDateInput.value = "2000-01-01";
-  if (!endDateInput.value) endDateInput.value = "2050-12-31";
-  if (startDateInput.value > endDateInput.value) endDateInput.value = startDateInput.value;
+function initYearSelectors() {
+  const years = Array.from({ length: 51 }, (_, idx) => 2000 + idx);
+  startYearSelect.innerHTML = years.map((y) => `<option value="${y}">${y}</option>`).join("");
+  endYearSelect.innerHTML = years.map((y) => `<option value="${y}">${y}</option>`).join("");
+  startYearSelect.value = "2000";
+  endYearSelect.value = "2050";
 }
 
-function applyDateWindow(labels, datasets) {
-  normalizeDateInputs();
-  const start = new Date(startDateInput.value);
-  const end = new Date(endDateInput.value);
+function normalizeYearRange() {
+  const start = Number(startYearSelect.value);
+  const end = Number(endYearSelect.value);
+  if (start > end) endYearSelect.value = String(start);
+}
+
+function applyYearWindow(labels, datasets) {
+  normalizeYearRange();
+  const startYear = Number(startYearSelect.value);
+  const endYear = Number(endYearSelect.value);
+
   const idx = state.dateObjects
     .map((d, i) => ({ d, i }))
-    .filter((x) => x.d >= start && x.d <= end)
+    .filter((x) => x.d.getFullYear() >= startYear && x.d.getFullYear() <= endYear)
     .map((x) => x.i);
 
   return {
@@ -135,7 +146,7 @@ function applyDateWindow(labels, datasets) {
 }
 
 function updateChart(title, subtitle, labels, datasets, stacked = false) {
-  const { filteredLabels, filteredDatasets } = applyDateWindow(labels, datasets);
+  const { filteredLabels, filteredDatasets } = applyYearWindow(labels, datasets);
   chartTitle.textContent = title;
   chartSubtitle.textContent = subtitle;
   demandChart.data.labels = filteredLabels;
@@ -144,23 +155,20 @@ function updateChart(title, subtitle, labels, datasets, stacked = false) {
   demandChart.update();
 }
 
-function scenarioSeriesForHub(hub, scenario) {
-  return {
+function showHubAllScenarios(hub) {
+  const datasets = Object.keys(scenarioFileCandidates).map((scenario) => ({
     label: scenario,
     data: state.scenarios[scenario]?.[hub] || [],
     borderColor: scenarioColors[scenario],
-    backgroundColor: `${scenarioColors[scenario]}66`,
-    fill: true,
+    backgroundColor: scenarioColors[scenario],
+    fill: false,
     pointRadius: 0,
     tension: 0.2,
-    borderWidth: 1.4,
-  };
-}
+    borderWidth: 2,
+  }));
 
-function showHubAllScenarios(hub) {
-  const datasets = Object.keys(scenarioFileCandidates).map((scenario) => scenarioSeriesForHub(hub, scenario));
   state.lastView = { type: "hub", hub };
-  updateChart(`Demand for ${hub}`, "All three scenarios for selected hub.", state.dates, datasets, false);
+  updateChart(`Demand for ${hub}`, "Line chart of all scenarios for selected hub.", state.dates, datasets, false);
 }
 
 function showPolygonSpecificScenario(hubs, scenario) {
@@ -200,9 +208,10 @@ function detectDateColumn(rows) {
 function parseWorkbookRows(rows, scenario) {
   const dateCol = detectDateColumn(rows);
   const headers = rows[0] || [];
+  const skipHubColumns = new Set(["month", "gas_month"]);
   const hubColumns = headers
     .map((value, col) => ({ value: String(value ?? "").trim(), col }))
-    .filter((entry) => entry.col !== dateCol && entry.value.length > 0);
+    .filter((entry) => entry.col !== dateCol && entry.value.length > 0 && !skipHubColumns.has(entry.value.toLowerCase()));
 
   const localDates = [];
   const localDateObjects = [];
@@ -257,6 +266,26 @@ async function discoverDemandFiles() {
   return discovered;
 }
 
+async function discoverTransportFileName() {
+  if (window.location.protocol === "file:") return null;
+  try {
+    const response = await fetch("./");
+    if (!response.ok) return null;
+    const html = await response.text();
+    const hrefMatches = [...html.matchAll(/href=\"([^\"]+)\"/g)].map((m) => decodeURIComponent(m[1]));
+
+    const found = hrefMatches.find((h) => h.toLowerCase().includes("transport_rev") && h.toLowerCase().endsWith(".csv"));
+    if (found) return found.split("/").pop();
+
+    for (const candidate of transportFileCandidates) {
+      if (hrefMatches.includes(candidate)) return candidate;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function buildScenarioCandidates(discoveredByScenario) {
   const merged = {};
   Object.keys(scenarioFileCandidates).forEach((scenario) => {
@@ -274,35 +303,41 @@ async function readRowsFromSource(source) {
   if (typeof source === "string") {
     const response = await fetch(`./${encodeURIComponent(source)}`);
     if (!response.ok) throw new Error(`Could not fetch ${source}`);
-    const buffer = await response.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
+    const text = await response.text();
+    if (source.toLowerCase().endsWith(".csv")) {
+      const workbook = XLSX.read(text, { type: "string" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+    }
+    const workbook = XLSX.read(await response.arrayBuffer(), { type: "array" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
   }
 
-  const buffer = await source.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array" });
+  const isCsv = source.name.toLowerCase().endsWith(".csv");
+  if (isCsv) {
+    const workbook = XLSX.read(await source.text(), { type: "string" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+  }
+
+  const workbook = XLSX.read(await source.arrayBuffer(), { type: "array" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
 }
 
 async function loadWorkbookForScenario(scenario, candidateMap) {
   const candidates = candidateMap[scenario] || [];
-  const attempted = [];
-
   for (const source of candidates) {
-    const sourceName = typeof source === "string" ? source : source.name;
-    attempted.push(sourceName);
     try {
       const rows = await readRowsFromSource(source);
       parseWorkbookRows(rows, scenario);
-      return { loadedFile: sourceName, attempted };
+      return typeof source === "string" ? source : source.name;
     } catch {
       // continue
     }
   }
-
-  throw new Error(`No readable workbook found for ${scenario}. Attempted: ${attempted.join(", ") || "none"}`);
+  throw new Error(`No readable workbook found for ${scenario}`);
 }
 
 function fallbackData() {
@@ -320,11 +355,9 @@ function fallbackData() {
   });
 }
 
-function rebuildMapMarkers() {
-  if (markerLayer) {
-    map.removeLayer(markerLayer);
-  }
-  markerLayer = L.layerGroup().addTo(map);
+function rebuildDemandMarkers() {
+  if (demandMarkerLayer) demandMap.removeLayer(demandMarkerLayer);
+  demandMarkerLayer = L.layerGroup().addTo(demandMap);
 
   state.hubs.forEach((hub) => {
     const coord = hubCoordinates[hub] || [37 + Math.random() * 8, -100 + Math.random() * 20];
@@ -334,7 +367,7 @@ function rebuildMapMarkers() {
       fillColor: "#60a5fa",
       fillOpacity: 0.9,
       weight: 1,
-    }).addTo(markerLayer);
+    }).addTo(demandMarkerLayer);
 
     marker.hubName = hub;
     marker.bindTooltip(hub);
@@ -357,31 +390,23 @@ function redrawCurrentView() {
   updateChart("Click a hub to view all scenarios", "Or draw a polygon to view stacked selected hubs for one scenario.", state.dates, [], false);
 }
 
-function setupPolygonSelection() {
+function setupDemandPolygonSelection() {
   const drawnItems = new L.FeatureGroup();
-  map.addLayer(drawnItems);
-
-  map.addControl(
+  demandMap.addLayer(drawnItems);
+  demandMap.addControl(
     new L.Control.Draw({
-      draw: {
-        polygon: { allowIntersection: false },
-        polyline: false,
-        rectangle: false,
-        circle: false,
-        marker: false,
-        circlemarker: false,
-      },
+      draw: { polygon: { allowIntersection: false }, polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false },
       edit: { featureGroup: drawnItems, remove: true, edit: false },
     }),
   );
 
-  map.on(L.Draw.Event.CREATED, (event) => {
+  demandMap.on(L.Draw.Event.CREATED, (event) => {
     drawnItems.clearLayers();
     drawnItems.addLayer(event.layer);
     const polygon = event.layer.toGeoJSON();
     const selected = [];
 
-    map.eachLayer((layer) => {
+    demandMap.eachLayer((layer) => {
       if (layer.hubName) {
         const ll = layer.getLatLng();
         const point = turf.point([ll.lng, ll.lat]);
@@ -393,7 +418,7 @@ function setupPolygonSelection() {
     showPolygonSpecificScenario(selected, normalizeScenarioName(scenarioSelect.value));
   });
 
-  map.on(L.Draw.Event.DELETED, () => {
+  demandMap.on(L.Draw.Event.DELETED, () => {
     state.selectedHubs = [];
     redrawCurrentView();
   });
@@ -410,10 +435,114 @@ function resetStateForReload() {
 
 function captureSelectedFiles() {
   selectedFilesByScenario = { Archipelagos: [], Surge: [], Horizon: [] };
+  selectedTransportFile = null;
+
   [...(filePicker.files || [])].forEach((file) => {
     const scenario = inferScenarioFromName(file.name);
     if (scenario) selectedFilesByScenario[scenario].push(file);
+    if (file.name.toLowerCase().includes("transport_rev") && file.name.toLowerCase().endsWith(".csv")) {
+      selectedTransportFile = file;
+    }
   });
+}
+
+function normalizedHeaderName(name) {
+  return String(name ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function findHeaderIndex(header, aliases) {
+  const normalizedAliases = aliases.map((a) => a.toLowerCase());
+  return header.findIndex((h) => normalizedAliases.includes(h));
+}
+
+function parseTransportRows(rows) {
+  const header = (rows[0] || []).map((h) => normalizedHeaderName(h));
+
+  const fromIdx = findHeaderIndex(header, ["from", "origin", "source", "fromhub", "hubfrom", "start", "nodefrom"]);
+  const toIdx = findHeaderIndex(header, ["to", "destination", "sink", "tohub", "hubto", "end", "nodeto"]);
+  const capIdx = findHeaderIndex(header, ["capacity", "cap", "maxcapacity", "pipelinecapacity", "flowcapacity"]);
+  const costIdx = findHeaderIndex(header, ["cost", "tariff", "price", "unitcost", "transportcost"]);
+
+  if (fromIdx === -1 || toIdx === -1 || capIdx === -1 || costIdx === -1) {
+    return [];
+  }
+
+  return rows
+    .slice(1)
+    .map((r) => ({
+      from: String(r[fromIdx] ?? "").trim(),
+      to: String(r[toIdx] ?? "").trim(),
+      capacity: Number(r[capIdx] ?? 0),
+      cost: Number(r[costIdx] ?? 0),
+    }))
+    .filter((x) => x.from && x.to && Number.isFinite(x.capacity));
+}
+
+function drawTransportHubMarkers(layer) {
+  Object.entries(hubCoordinates).forEach(([name, coord]) => {
+    L.circleMarker(coord, {
+      radius: 4,
+      color: "#1f2937",
+      fillColor: "#f59e0b",
+      fillOpacity: 0.9,
+      weight: 1,
+    })
+      .addTo(layer)
+      .bindTooltip(name);
+  });
+}
+
+async function loadTransportData() {
+  let rows = null;
+
+  if (selectedTransportFile) {
+    rows = await readRowsFromSource(selectedTransportFile);
+  } else {
+    const discoveredName = await discoverTransportFileName();
+    const fallbackNames = discoveredName ? [discoveredName] : transportFileCandidates;
+
+    for (const name of fallbackNames) {
+      try {
+        rows = await readRowsFromSource(name);
+        break;
+      } catch {
+        // try next
+      }
+    }
+  }
+
+  if (transportLayerGroup) transportMap.removeLayer(transportLayerGroup);
+  transportLayerGroup = L.layerGroup().addTo(transportMap);
+  drawTransportHubMarkers(transportLayerGroup);
+
+  if (!rows) return false;
+
+  const flows = parseTransportRows(rows);
+  if (!flows.length) return false;
+
+  const maxCap = Math.max(...flows.map((f) => f.capacity), 1);
+
+  flows.forEach((flow) => {
+    const from = hubCoordinates[flow.from];
+    const to = hubCoordinates[flow.to];
+    if (!from || !to) return;
+
+    const weight = 1 + 8 * (flow.capacity / maxCap);
+    const line = L.polyline([from, to], {
+      color: "#b45309",
+      weight,
+      opacity: 0.55,
+    }).addTo(transportLayerGroup);
+
+    const mid = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
+    L.marker(mid, {
+      icon: L.divIcon({ className: "flow-cost-label", html: `${flow.cost}` }),
+    }).addTo(transportLayerGroup);
+
+    line.bindTooltip(`${flow.from} → ${flow.to}<br/>Capacity: ${flow.capacity}<br/>Cost: ${flow.cost}`);
+  });
+
+  return true;
 }
 
 async function loadAllData() {
@@ -426,10 +555,10 @@ async function loadAllData() {
 
   for (const scenario of Object.keys(scenarioFileCandidates)) {
     try {
-      const { loadedFile } = await loadWorkbookForScenario(scenario, candidateMap);
+      const loadedFile = await loadWorkbookForScenario(scenario, candidateMap);
       loaded.push(`${scenario}: ${loadedFile}`);
     } catch {
-      missing.push(`${scenario} (${candidateMap[scenario].map((v) => (typeof v === "string" ? v : v.name)).join(", ") || "no candidates"})`);
+      missing.push(scenario);
     }
   }
 
@@ -437,29 +566,58 @@ async function loadAllData() {
     fallbackData();
     const protocolHint =
       window.location.protocol === "file:"
-        ? " You opened index.html directly (file://), so browser security blocks automatic local file fetch. Use 'Load Selected Files' or run a local server."
+        ? " Opened via file://. Use 'Load Selected Files' and pick all three demand scenario files together."
         : "";
-    dataStatus.textContent =
-      `Demand files could not be loaded from ${window.location.pathname}.` +
-      protocolHint;
+    dataStatus.textContent = `Demand files could not be loaded.${protocolHint}`;
   } else {
-    dataStatus.textContent = `Loaded ${loaded.join(" | ")}${missing.length ? ` | Missing: ${missing.join("; ")}` : ""}`;
+    dataStatus.textContent = `Loaded ${loaded.join(" | ")}${missing.length ? ` | Missing: ${missing.join(", ")}` : ""}`;
   }
 
-  rebuildMapMarkers();
+  rebuildDemandMarkers();
   redrawCurrentView();
+  transportLoaded = await loadTransportData();
 }
+
+function switchPage(pageId) {
+  document.querySelectorAll(".page").forEach((p) => p.classList.add("hidden"));
+  document.getElementById(pageId).classList.remove("hidden");
+
+  document.querySelectorAll(".nav-item[data-page]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.page === pageId);
+  });
+
+  document.getElementById("controls-page-1").classList.toggle("hidden", pageId !== "page-1");
+  document.getElementById("controls-page-2").classList.toggle("hidden", pageId !== "page-2");
+
+  setTimeout(() => {
+    if (pageId === "page-1") demandMap.invalidateSize();
+    if (pageId === "page-2") {
+      transportMap.invalidateSize();
+      if (!transportLoaded) {
+        dataStatus.textContent = `${dataStatus.textContent} | transport_rev.csv not found or has unexpected columns.`;
+      }
+    }
+  }, 80);
+}
+
+initYearSelectors();
+setupDemandPolygonSelection();
 
 document.querySelectorAll('input[name="view-mode"]').forEach((input) => {
   input.addEventListener("change", () => redrawCurrentView());
 });
+
 scenarioSelect.addEventListener("change", () => redrawCurrentView());
-startDateInput.addEventListener("change", () => redrawCurrentView());
-endDateInput.addEventListener("change", () => redrawCurrentView());
+startYearSelect.addEventListener("change", () => redrawCurrentView());
+endYearSelect.addEventListener("change", () => redrawCurrentView());
+
 reloadFilesBtn.addEventListener("click", async () => {
   captureSelectedFiles();
   await loadAllData();
 });
 
-setupPolygonSelection();
+document.querySelectorAll(".nav-item[data-page]").forEach((btn) => {
+  btn.addEventListener("click", () => switchPage(btn.dataset.page));
+});
+
 loadAllData();

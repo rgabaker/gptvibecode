@@ -25,11 +25,11 @@
     <div class="layout">
       <aside class="nav-panel panel">
         <h2>Navigation</h2>
-        <button class="nav-item active">Hub Demand by Scenario</button>
-        <button class="nav-item" disabled>Page 2 (coming soon)</button>
+        <button class="nav-item active" data-page="page-1">Hub Demand by Scenario</button>
+        <button class="nav-item" data-page="page-2">Transport Network</button>
         <button class="nav-item" disabled>Page 3 (coming soon)</button>
 
-        <div class="controls">
+        <div class="controls" id="controls-page-1">
           <h3>Chart Options</h3>
           <label>
             <input type="radio" name="view-mode" value="hub-all-scenarios" checked />
@@ -47,29 +47,45 @@
             <option value="Horizon">Horizon</option>
           </select>
 
-          <h3>Date Range</h3>
-          <label for="start-date">Start date</label>
-          <input id="start-date" type="date" value="2000-01-01" min="2000-01-01" max="2050-12-31" />
+          <h3>Year Range</h3>
+          <label for="start-year">Start year</label>
+          <select id="start-year"></select>
 
-          <label for="end-date">End date</label>
-          <input id="end-date" type="date" value="2050-12-31" min="2000-01-01" max="2050-12-31" />
+          <label for="end-year">End year</label>
+          <select id="end-year"></select>
 
           <h3>Data Files</h3>
-          <input id="file-picker" type="file" accept=".csv,.xlsx,.xls" multiple />
+          <div class="file-row">
+            <input id="file-picker" type="file" accept=".csv,.xlsx,.xls" multiple />
+            <span class="info-box">All Scenarios must be loaded at the same time.</span>
+          </div>
           <button id="reload-files" type="button">Load Selected Files</button>
 
           <p class="note" id="data-status"></p>
         </div>
+
+        <div class="controls hidden" id="controls-page-2">
+          <h3>Transport Network</h3>
+          <p class="note">Page 2 loads <code>transport_rev.csv</code> and draws hub-to-hub flows where width ∝ capacity and labels show cost.</p>
+        </div>
       </aside>
 
       <main>
-        <section class="panel map-panel">
-          <div id="map"></div>
+        <section id="page-1" class="page active-page">
+          <section class="panel map-panel">
+            <div id="map-demand"></div>
+          </section>
+          <section class="panel chart-panel">
+            <h2 id="chart-title">Click a hub to view all scenarios</h2>
+            <canvas id="demand-chart"></canvas>
+            <p id="chart-subtitle"></p>
+          </section>
         </section>
-        <section class="panel chart-panel">
-          <h2 id="chart-title">Click a hub to view all scenarios</h2>
-          <canvas id="demand-chart"></canvas>
-          <p id="chart-subtitle"></p>
+
+        <section id="page-2" class="page hidden">
+          <section class="panel map-panel full-width">
+            <div id="map-transport"></div>
+          </section>
         </section>
       </main>
     </div>
