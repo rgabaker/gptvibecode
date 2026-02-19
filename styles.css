@@ -78,6 +78,19 @@ header p {
   font: inherit;
 }
 
+#file-picker,
+#reload-files {
+  padding: 0.4rem;
+  font: inherit;
+}
+
+#reload-files {
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .note {
   color: #334155;
   font-size: 0.8rem;

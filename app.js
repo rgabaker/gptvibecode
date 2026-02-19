@@ -1,14 +1,6 @@
 const scenarioFileCandidates = {
-  Archipelagos: [
-    "demand_Archipelagos.csv",
-    "Demand_Archipelagos.csv",
-    "Demand_Archipelagos.xlsx",
-  ],
-  Surge: [
-    "demand_Surge.csv",
-    "Demand_Surge.csv",
-    "Demand_Surge.xlsx",
-  ],
+  Archipelagos: ["demand_Archipelagos.csv", "Demand_Archipelagos.csv", "Demand_Archipelagos.xlsx"],
+  Surge: ["demand_Surge.csv", "Demand_Surge.csv", "Demand_Surge.xlsx"],
   Horizon: [
     "demand_Horizon.csv",
     "Demand_Horizon.csv",
@@ -46,6 +38,8 @@ const dataStatus = document.getElementById("data-status");
 const scenarioSelect = document.getElementById("scenario-select");
 const startDateInput = document.getElementById("start-date");
 const endDateInput = document.getElementById("end-date");
+const filePicker = document.getElementById("file-picker");
+const reloadFilesBtn = document.getElementById("reload-files");
 
 const map = L.map("map", { zoomControl: true }).setView([37.5, -96], 4);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -72,6 +66,9 @@ const state = {
   lastView: { type: "none", hub: null },
 };
 
+let markerLayer = null;
+let selectedFilesByScenario = { Archipelagos: [], Surge: [], Horizon: [] };
+
 function parseDateCell(value) {
   if (typeof value === "number") {
     const parsed = XLSX.SSF.parse_date_code(value);
@@ -86,18 +83,13 @@ function parseDateCell(value) {
   if (!Number.isNaN(date.getTime())) return date;
 
   const mdY = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (mdY) {
-    return new Date(Number(mdY[3]), Number(mdY[1]) - 1, Number(mdY[2]));
-  }
-
+  if (mdY) return new Date(Number(mdY[3]), Number(mdY[1]) - 1, Number(mdY[2]));
   return null;
 }
 
 function cleanDateForCentury(rawDate, rowIndex) {
   const d = new Date(rawDate.getTime());
-  if (rowIndex >= 350 && d.getFullYear() < 2000) {
-    d.setFullYear(d.getFullYear() + 100);
-  }
+  if (rowIndex >= 350 && d.getFullYear() < 2000) d.setFullYear(d.getFullYear() + 100);
   return d;
 }
 
@@ -109,6 +101,14 @@ function normalizeScenarioName(raw) {
   return raw === "Horzion" ? "Horizon" : raw;
 }
 
+function inferScenarioFromName(name) {
+  const n = name.toLowerCase();
+  if (n.includes("arch")) return "Archipelagos";
+  if (n.includes("surge")) return "Surge";
+  if (n.includes("horizon") || n.includes("horzion")) return "Horizon";
+  return null;
+}
+
 function getViewMode() {
   return document.querySelector('input[name="view-mode"]:checked').value;
 }
@@ -116,33 +116,26 @@ function getViewMode() {
 function normalizeDateInputs() {
   if (!startDateInput.value) startDateInput.value = "2000-01-01";
   if (!endDateInput.value) endDateInput.value = "2050-12-31";
-  if (startDateInput.value > endDateInput.value) {
-    endDateInput.value = startDateInput.value;
-  }
+  if (startDateInput.value > endDateInput.value) endDateInput.value = startDateInput.value;
 }
 
 function applyDateWindow(labels, datasets) {
   normalizeDateInputs();
   const start = new Date(startDateInput.value);
   const end = new Date(endDateInput.value);
-
   const idx = state.dateObjects
     .map((d, i) => ({ d, i }))
     .filter((x) => x.d >= start && x.d <= end)
     .map((x) => x.i);
 
-  const filteredLabels = idx.map((i) => labels[i]);
-  const filteredDatasets = datasets.map((set) => ({
-    ...set,
-    data: idx.map((i) => set.data[i] ?? 0),
-  }));
-
-  return { filteredLabels, filteredDatasets };
+  return {
+    filteredLabels: idx.map((i) => labels[i]),
+    filteredDatasets: datasets.map((set) => ({ ...set, data: idx.map((i) => set.data[i] ?? 0) })),
+  };
 }
 
 function updateChart(title, subtitle, labels, datasets, stacked = false) {
   const { filteredLabels, filteredDatasets } = applyDateWindow(labels, datasets);
-
   chartTitle.textContent = title;
   chartSubtitle.textContent = subtitle;
   demandChart.data.labels = filteredLabels;
@@ -153,7 +146,7 @@ function updateChart(title, subtitle, labels, datasets, stacked = false) {
 
 function scenarioSeriesForHub(hub, scenario) {
   return {
-    label: `${scenario}`,
+    label: scenario,
     data: state.scenarios[scenario]?.[hub] || [],
     borderColor: scenarioColors[scenario],
     backgroundColor: `${scenarioColors[scenario]}66`,
@@ -167,14 +160,7 @@ function scenarioSeriesForHub(hub, scenario) {
 function showHubAllScenarios(hub) {
   const datasets = Object.keys(scenarioFileCandidates).map((scenario) => scenarioSeriesForHub(hub, scenario));
   state.lastView = { type: "hub", hub };
-
-  updateChart(
-    `Demand for ${hub}`,
-    "All three scenarios for selected hub.",
-    state.dates,
-    datasets,
-    false,
-  );
+  updateChart(`Demand for ${hub}`, "All three scenarios for selected hub.", state.dates, datasets, false);
 }
 
 function showPolygonSpecificScenario(hubs, scenario) {
@@ -191,21 +177,13 @@ function showPolygonSpecificScenario(hubs, scenario) {
   }));
 
   state.lastView = { type: "polygon", hub: null };
-
-  updateChart(
-    `${scenario}: ${hubs.length} selected hub(s)`,
-    "Stacked area by selected hubs for chosen scenario.",
-    state.dates,
-    datasets,
-    true,
-  );
+  updateChart(`${scenario}: ${hubs.length} selected hub(s)`, "Stacked area by selected hubs for chosen scenario.", state.dates, datasets, true);
 }
 
 function detectDateColumn(rows) {
   const maxCols = Math.max(...rows.slice(0, 30).map((r) => r.length));
   let best = 1;
   let bestScore = -1;
-
   for (let c = 0; c < maxCols; c += 1) {
     let score = 0;
     for (let r = 1; r < Math.min(rows.length, 80); r += 1) {
@@ -216,7 +194,6 @@ function detectDateColumn(rows) {
       best = c;
     }
   }
-
   return best;
 }
 
@@ -229,7 +206,6 @@ function parseWorkbookRows(rows, scenario) {
 
   const localDates = [];
   const localDateObjects = [];
-
   state.scenarios[scenario] = {};
   hubColumns.forEach((h) => {
     state.scenarios[scenario][h.value] = [];
@@ -238,14 +214,12 @@ function parseWorkbookRows(rows, scenario) {
   for (let r = 1; r < rows.length; r += 1) {
     const rawDate = parseDateCell(rows[r][dateCol]);
     if (!rawDate) continue;
-
     const cleaned = cleanDateForCentury(rawDate, r + 1);
     const year = cleaned.getFullYear();
     if (year < 2000 || year > 2050) continue;
 
     localDateObjects.push(cleaned);
     localDates.push(formatIsoDate(cleaned));
-
     hubColumns.forEach((h) => {
       const value = Number(rows[r][h.col] ?? 0);
       state.scenarios[scenario][h.value].push(Number.isFinite(value) ? value : 0);
@@ -259,20 +233,9 @@ function parseWorkbookRows(rows, scenario) {
   }
 }
 
-function inferScenarioFromName(name) {
-  const n = name.toLowerCase();
-  if (n.includes("arch")) return "Archipelagos";
-  if (n.includes("surge")) return "Surge";
-  if (n.includes("horizon") || n.includes("horzion")) return "Horizon";
-  return null;
-}
-
 async function discoverDemandFiles() {
-  const discovered = {
-    Archipelagos: [],
-    Surge: [],
-    Horizon: [],
-  };
+  const discovered = { Archipelagos: [], Surge: [], Horizon: [] };
+  if (window.location.protocol === "file:") return discovered;
 
   try {
     const response = await fetch("./");
@@ -284,12 +247,11 @@ async function discoverDemandFiles() {
       const baseName = href.split("/").pop();
       if (!baseName || !baseName.toLowerCase().startsWith("demand")) return;
       if (!/\.(xlsx|xls|csv)$/i.test(baseName)) return;
-
       const scenario = inferScenarioFromName(baseName);
       if (scenario) discovered[scenario].push(baseName);
     });
   } catch {
-    // Directory listing may be disabled depending on server config.
+    // ignore
   }
 
   return discovered;
@@ -297,35 +259,46 @@ async function discoverDemandFiles() {
 
 function buildScenarioCandidates(discoveredByScenario) {
   const merged = {};
-
   Object.keys(scenarioFileCandidates).forEach((scenario) => {
     const set = new Set([
+      ...(selectedFilesByScenario[scenario] || []),
       ...(discoveredByScenario[scenario] || []),
       ...scenarioFileCandidates[scenario],
     ]);
     merged[scenario] = [...set];
   });
-
   return merged;
+}
+
+async function readRowsFromSource(source) {
+  if (typeof source === "string") {
+    const response = await fetch(`./${encodeURIComponent(source)}`);
+    if (!response.ok) throw new Error(`Could not fetch ${source}`);
+    const buffer = await response.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+  }
+
+  const buffer = await source.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
 }
 
 async function loadWorkbookForScenario(scenario, candidateMap) {
   const candidates = candidateMap[scenario] || [];
   const attempted = [];
 
-  for (const fileName of candidates) {
-    attempted.push(fileName);
+  for (const source of candidates) {
+    const sourceName = typeof source === "string" ? source : source.name;
+    attempted.push(sourceName);
     try {
-      const response = await fetch(`./${encodeURIComponent(fileName)}`);
-      if (!response.ok) continue;
-      const buffer = await response.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+      const rows = await readRowsFromSource(source);
       parseWorkbookRows(rows, scenario);
-      return { loadedFile: fileName, attempted };
+      return { loadedFile: sourceName, attempted };
     } catch {
-      // Try the next candidate.
+      // continue
     }
   }
 
@@ -347,8 +320,11 @@ function fallbackData() {
   });
 }
 
-function buildHubMarkers() {
-  const layer = L.layerGroup().addTo(map);
+function rebuildMapMarkers() {
+  if (markerLayer) {
+    map.removeLayer(markerLayer);
+  }
+  markerLayer = L.layerGroup().addTo(map);
 
   state.hubs.forEach((hub) => {
     const coord = hubCoordinates[hub] || [37 + Math.random() * 8, -100 + Math.random() * 20];
@@ -358,17 +334,13 @@ function buildHubMarkers() {
       fillColor: "#60a5fa",
       fillOpacity: 0.9,
       weight: 1,
-    }).addTo(layer);
+    }).addTo(markerLayer);
 
     marker.hubName = hub;
     marker.bindTooltip(hub);
-
     marker.on("click", () => {
-      if (getViewMode() === "hub-all-scenarios") {
-        showHubAllScenarios(hub);
-      } else {
-        showPolygonSpecificScenario([hub], normalizeScenarioName(scenarioSelect.value));
-      }
+      if (getViewMode() === "hub-all-scenarios") showHubAllScenarios(hub);
+      else showPolygonSpecificScenario([hub], normalizeScenarioName(scenarioSelect.value));
     });
   });
 }
@@ -378,19 +350,11 @@ function redrawCurrentView() {
     showHubAllScenarios(state.lastView.hub);
     return;
   }
-
   if (state.selectedHubs.length && getViewMode() === "polygon-specific-scenario") {
     showPolygonSpecificScenario(state.selectedHubs, normalizeScenarioName(scenarioSelect.value));
     return;
   }
-
-  updateChart(
-    "Click a hub to view all scenarios",
-    "Or draw a polygon to view stacked selected hubs for one scenario.",
-    state.dates,
-    [],
-    false,
-  );
+  updateChart("Click a hub to view all scenarios", "Or draw a polygon to view stacked selected hubs for one scenario.", state.dates, [], false);
 }
 
 function setupPolygonSelection() {
@@ -414,7 +378,6 @@ function setupPolygonSelection() {
   map.on(L.Draw.Event.CREATED, (event) => {
     drawnItems.clearLayers();
     drawnItems.addLayer(event.layer);
-
     const polygon = event.layer.toGeoJSON();
     const selected = [];
 
@@ -422,9 +385,7 @@ function setupPolygonSelection() {
       if (layer.hubName) {
         const ll = layer.getLatLng();
         const point = turf.point([ll.lng, ll.lat]);
-        if (turf.booleanPointInPolygon(point, polygon)) {
-          selected.push(layer.hubName);
-        }
+        if (turf.booleanPointInPolygon(point, polygon)) selected.push(layer.hubName);
       }
     });
 
@@ -438,7 +399,25 @@ function setupPolygonSelection() {
   });
 }
 
-async function init() {
+function resetStateForReload() {
+  state.dates = [];
+  state.dateObjects = [];
+  state.scenarios = {};
+  state.hubs = [];
+  state.selectedHubs = [];
+  state.lastView = { type: "none", hub: null };
+}
+
+function captureSelectedFiles() {
+  selectedFilesByScenario = { Archipelagos: [], Surge: [], Horizon: [] };
+  [...(filePicker.files || [])].forEach((file) => {
+    const scenario = inferScenarioFromName(file.name);
+    if (scenario) selectedFilesByScenario[scenario].push(file);
+  });
+}
+
+async function loadAllData() {
+  resetStateForReload();
   const loaded = [];
   const missing = [];
 
@@ -449,33 +428,38 @@ async function init() {
     try {
       const { loadedFile } = await loadWorkbookForScenario(scenario, candidateMap);
       loaded.push(`${scenario}: ${loadedFile}`);
-    } catch (err) {
-      missing.push(`${scenario} (${candidateMap[scenario].join(", ") || "no candidates"})`);
-      console.warn(err);
+    } catch {
+      missing.push(`${scenario} (${candidateMap[scenario].map((v) => (typeof v === "string" ? v : v.name)).join(", ") || "no candidates"})`);
     }
   }
 
   if (loaded.length === 0) {
     fallbackData();
+    const protocolHint =
+      window.location.protocol === "file:"
+        ? " You opened index.html directly (file://), so browser security blocks automatic local file fetch. Use 'Load Selected Files' or run a local server."
+        : "";
     dataStatus.textContent =
-      `Demand files could not be loaded from ${window.location.pathname}. ` +
-      "Check that the files are in the same folder as index.html and names include scenario keywords (Archipelagos/Surge/Horizon).";
+      `Demand files could not be loaded from ${window.location.pathname}.` +
+      protocolHint;
   } else {
     dataStatus.textContent = `Loaded ${loaded.join(" | ")}${missing.length ? ` | Missing: ${missing.join("; ")}` : ""}`;
   }
 
-  buildHubMarkers();
-  setupPolygonSelection();
-
+  rebuildMapMarkers();
   redrawCurrentView();
 }
 
 document.querySelectorAll('input[name="view-mode"]').forEach((input) => {
   input.addEventListener("change", () => redrawCurrentView());
 });
-
 scenarioSelect.addEventListener("change", () => redrawCurrentView());
 startDateInput.addEventListener("change", () => redrawCurrentView());
 endDateInput.addEventListener("change", () => redrawCurrentView());
+reloadFilesBtn.addEventListener("click", async () => {
+  captureSelectedFiles();
+  await loadAllData();
+});
 
-init();
+setupPolygonSelection();
+loadAllData();

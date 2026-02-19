@@ -54,6 +54,10 @@
           <label for="end-date">End date</label>
           <input id="end-date" type="date" value="2050-12-31" min="2000-01-01" max="2050-12-31" />
 
+          <h3>Data Files</h3>
+          <input id="file-picker" type="file" accept=".csv,.xlsx,.xls" multiple />
+          <button id="reload-files" type="button">Load Selected Files</button>
+
           <p class="note" id="data-status"></p>
         </div>
       </aside>
