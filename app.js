@@ -1,7 +1,21 @@
 const scenarioFileCandidates = {
-  Archipelagos: ["Demand_Archipelagos.xlsx"],
-  Surge: ["Demand_Surge.xlsx"],
-  Horizon: ["Demand_Horizon.xlsx", "Demand_Horzion.xlsx"],
+  Archipelagos: [
+    "demand_Archipelagos.csv",
+    "Demand_Archipelagos.csv",
+    "Demand_Archipelagos.xlsx",
+  ],
+  Surge: [
+    "demand_Surge.csv",
+    "Demand_Surge.csv",
+    "Demand_Surge.xlsx",
+  ],
+  Horizon: [
+    "demand_Horizon.csv",
+    "Demand_Horizon.csv",
+    "Demand_Horizon.xlsx",
+    "Demand_Horzion.csv",
+    "Demand_Horzion.xlsx",
+  ],
 };
 
 const scenarioColors = {
@@ -20,7 +34,7 @@ const hubCoordinates = {
   TGP: [36.1627, -86.7816],
   "Transco Z5": [28.5383, -81.3792],
   Waha: [31.6504, -103.2502],
-  Henry: [29.9480, -93.7890],
+  Henry: [29.948, -93.789],
   LNG: [30.2266, -93.2174],
   AECO: [51.0447, -114.0719],
   Mexico: [25.6866, -100.3161],
@@ -106,7 +120,6 @@ function normalizeDateInputs() {
     endDateInput.value = startDateInput.value;
   }
 }
-
 
 function applyDateWindow(labels, datasets) {
   normalizeDateInputs();
@@ -246,25 +259,77 @@ function parseWorkbookRows(rows, scenario) {
   }
 }
 
-async function loadWorkbookForScenario(scenario) {
-  const candidates = scenarioFileCandidates[scenario];
+function inferScenarioFromName(name) {
+  const n = name.toLowerCase();
+  if (n.includes("arch")) return "Archipelagos";
+  if (n.includes("surge")) return "Surge";
+  if (n.includes("horizon") || n.includes("horzion")) return "Horizon";
+  return null;
+}
+
+async function discoverDemandFiles() {
+  const discovered = {
+    Archipelagos: [],
+    Surge: [],
+    Horizon: [],
+  };
+
+  try {
+    const response = await fetch("./");
+    if (!response.ok) return discovered;
+    const html = await response.text();
+    const hrefMatches = [...html.matchAll(/href=\"([^\"]+)\"/g)].map((m) => decodeURIComponent(m[1]));
+
+    hrefMatches.forEach((href) => {
+      const baseName = href.split("/").pop();
+      if (!baseName || !baseName.toLowerCase().startsWith("demand")) return;
+      if (!/\.(xlsx|xls|csv)$/i.test(baseName)) return;
+
+      const scenario = inferScenarioFromName(baseName);
+      if (scenario) discovered[scenario].push(baseName);
+    });
+  } catch {
+    // Directory listing may be disabled depending on server config.
+  }
+
+  return discovered;
+}
+
+function buildScenarioCandidates(discoveredByScenario) {
+  const merged = {};
+
+  Object.keys(scenarioFileCandidates).forEach((scenario) => {
+    const set = new Set([
+      ...(discoveredByScenario[scenario] || []),
+      ...scenarioFileCandidates[scenario],
+    ]);
+    merged[scenario] = [...set];
+  });
+
+  return merged;
+}
+
+async function loadWorkbookForScenario(scenario, candidateMap) {
+  const candidates = candidateMap[scenario] || [];
+  const attempted = [];
 
   for (const fileName of candidates) {
+    attempted.push(fileName);
     try {
-      const response = await fetch(fileName);
+      const response = await fetch(`./${encodeURIComponent(fileName)}`);
       if (!response.ok) continue;
       const buffer = await response.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
       parseWorkbookRows(rows, scenario);
-      return fileName;
+      return { loadedFile: fileName, attempted };
     } catch {
-      // try next candidate
+      // Try the next candidate.
     }
   }
 
-  throw new Error(`No readable workbook found for ${scenario}`);
+  throw new Error(`No readable workbook found for ${scenario}. Attempted: ${attempted.join(", ") || "none"}`);
 }
 
 function fallbackData() {
@@ -377,20 +442,26 @@ async function init() {
   const loaded = [];
   const missing = [];
 
+  const discovered = await discoverDemandFiles();
+  const candidateMap = buildScenarioCandidates(discovered);
+
   for (const scenario of Object.keys(scenarioFileCandidates)) {
     try {
-      const loadedFile = await loadWorkbookForScenario(scenario);
+      const { loadedFile } = await loadWorkbookForScenario(scenario, candidateMap);
       loaded.push(`${scenario}: ${loadedFile}`);
-    } catch {
-      missing.push(scenario);
+    } catch (err) {
+      missing.push(`${scenario} (${candidateMap[scenario].join(", ") || "no candidates"})`);
+      console.warn(err);
     }
   }
 
   if (loaded.length === 0) {
     fallbackData();
-    dataStatus.textContent = "Demand files not found in app folder. Showing fallback demo data.";
+    dataStatus.textContent =
+      `Demand files could not be loaded from ${window.location.pathname}. ` +
+      "Check that the files are in the same folder as index.html and names include scenario keywords (Archipelagos/Surge/Horizon).";
   } else {
-    dataStatus.textContent = `Loaded ${loaded.join(" | ")}${missing.length ? ` | Missing: ${missing.join(", ")}` : ""}`;
+    dataStatus.textContent = `Loaded ${loaded.join(" | ")}${missing.length ? ` | Missing: ${missing.join("; ")}` : ""}`;
   }
 
   buildHubMarkers();
