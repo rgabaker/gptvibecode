@@ -1,0 +1,106 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+header {
+  padding: 1rem 1.5rem;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+header h1 {
+  margin: 0 0 0.3rem;
+  font-size: 1.4rem;
+}
+
+header p {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.panel {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  padding: 0.8rem;
+  height: calc(100vh - 150px);
+  min-height: 500px;
+}
+
+.map-panel,
+.chart-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 8px;
+}
+
+.legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.8rem;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  border-radius: 50%;
+  margin-right: 0.3rem;
+}
+
+.swatch.oil {
+  background: #dc2626;
+}
+
+.swatch.gas {
+  background: #16a34a;
+}
+
+#chart-title {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+#production-chart {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+#chart-subtitle {
+  margin-top: 0.7rem;
+  font-size: 0.86rem;
+  color: #475569;
+}
+
+@media (max-width: 1100px) {
+  main {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    height: 60vh;
+  }
+}
