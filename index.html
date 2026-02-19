@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>US Hub Demand Dashboard</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>US Hub Demand Dashboard</h1>
+      <p>Hub demand by date and scenario (Archipelagos, Surge, Horizon).</p>
+    </header>
+
+    <div class="layout">
+      <aside class="nav-panel panel">
+        <h2>Navigation</h2>
+        <button class="nav-item active">Hub Demand by Scenario</button>
+        <button class="nav-item" disabled>Page 2 (coming soon)</button>
+        <button class="nav-item" disabled>Page 3 (coming soon)</button>
+
+        <div class="controls">
+          <h3>Chart Options</h3>
+          <label>
+            <input type="radio" name="view-mode" value="hub-all-scenarios" checked />
+            View all scenarios for clicked hub
+          </label>
+          <label>
+            <input type="radio" name="view-mode" value="polygon-specific-scenario" />
+            View polygon-selected hubs for one scenario
+          </label>
+
+          <label for="scenario-select">Scenario</label>
+          <select id="scenario-select">
+            <option value="Archipelagos">Archipelagos</option>
+            <option value="Surge">Surge</option>
+            <option value="Horizon">Horizon</option>
+          </select>
+
+          <h3>Date Range</h3>
+          <label for="start-date">Start date</label>
+          <input id="start-date" type="date" value="2000-01-01" min="2000-01-01" max="2050-12-31" />
+
+          <label for="end-date">End date</label>
+          <input id="end-date" type="date" value="2050-12-31" min="2000-01-01" max="2050-12-31" />
+
+          <h3>Data Files</h3>
+          <input id="file-picker" type="file" accept=".csv,.xlsx,.xls" multiple />
+          <button id="reload-files" type="button">Load Selected Files</button>
+
+          <p class="note" id="data-status"></p>
+        </div>
+      </aside>
+
+      <main>
+        <section class="panel map-panel">
+          <div id="map"></div>
+        </section>
+        <section class="panel chart-panel">
+          <h2 id="chart-title">Click a hub to view all scenarios</h2>
+          <canvas id="demand-chart"></canvas>
+          <p id="chart-subtitle"></p>
+        </section>
+      </main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
